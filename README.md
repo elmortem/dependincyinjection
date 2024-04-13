@@ -50,24 +50,24 @@ DI container class.
 DIContainer.Root.BindAsSingle<LevelManager>();
 ```
 
-### IDIResolver
+### IDIMaker
 Base DI interface.
 
 #### Example:
 ```
 public class AssetSystem
 {
-	private readonly IDIResolver _resolver;
+	private readonly IDIMaker _maker;
 
 	[Inject]
     public AssetSystem(IDIResolver resolver)
 	{
-		_resolver = resolver;
+		_maker = maker;
 	}
 	
 	public AssetLoader MakeLoader()
 	{
-		return _resolver.Create<AssetLoader>();
+		return _maker.Create<AssetLoader>();
 	}
 }
 ```
