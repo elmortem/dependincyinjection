@@ -5,12 +5,12 @@ namespace DI
 {
 	public interface IFactory
 	{
-		object Create(Type type);
+		object Create(Type type, params object[] parameters);
 		void Destroy(object instance);
 	}
 
 	public interface IFactory<in TBase> : IFactory
 	{
-		T Create<T>() where T : TBase;
+		T Create<T>(params object[] parameters) where T : TBase;
 	}
 }

@@ -10,7 +10,7 @@ using Object = UnityEngine.Object;
 namespace DI
 {
 	// ReSharper disable once InconsistentNaming
-	public class DIContainer : IDIResolver, IDisposable
+	public class DIContainer : IDIResolver, IDIMaker, IDIInjector, IDisposable
 	{
 		private static DIContainer _root;
 		public static DIContainer Root
@@ -43,6 +43,8 @@ namespace DI
 			_parent = parent;
 			
 			BindInstanceAsSingle<IDIResolver>(this);
+			BindInstanceAsSingle<IDIMaker>(this);
+			BindInstanceAsSingle<IDIInjector>(this);
 		}
 		
 		public void Dispose()
@@ -149,37 +151,11 @@ namespace DI
 			BindInstanceToType(instance, typeof(T));
 		}
 
-		/*public void BindInstanceAsSingle<TImplementation, TInterface>(TImplementation instance)
-			where TImplementation : class, TInterface
-			where TInterface : class
-		{
-			BindInstanceAsSingle<TInterface>(instance);
-			//BindInstanceAsSingle(instance);
-		}
-
-		public void BindInstanceAsSingle<TImplementation, TInterface, TInterface2>(TImplementation instance)
-			where TImplementation : class, TInterface, TInterface2
-			where TInterface : class
-			where TInterface2 : class
-		{
-			BindInstanceAsSingle<TInterface>(instance);
-			BindInstanceAsSingle<TInterface2>(instance);
-			//BindInstanceAsSingle(instance);
-		}
-		
-		public void BindInstanceAsSingle<TImplementation, TInterface, TInterface2, TInterface3>(TImplementation instance)
-			where TImplementation : class, TInterface, TInterface2, TInterface3
-			where TInterface : class
-			where TInterface2 : class
-			where TInterface3 : class
-		{
-			BindInstanceAsSingle<TInterface>(instance);
-			BindInstanceAsSingle<TInterface2>(instance);
-			BindInstanceAsSingle<TInterface3>(instance);
-		}*/
-
 		private void BindInstanceToType(object instance, Type type)
 		{
+			if (_typesToInstances.ContainsKey(type))
+				throw new Exception($"Instance for type {type} already exists.");
+			
 			_typesToInstances[type] = instance;
 		}
 		
@@ -274,6 +250,20 @@ namespace DI
 
 		public object Create(Type type, params object[] parameters)
 		{
+			object instance = CreateByFactory(type, parameters);
+			if (instance == null)
+				instance = CreateWithoutFactory(type, parameters);
+			return instance;
+		}
+		
+		public T Create<T>(params object[] parameters)
+		{
+			var type = typeof(T);
+			return (T)Create(type, parameters);
+		}
+		
+		public object CreateWithoutFactory(Type type, params object[] parameters)
+		{
 			object instance;
 			if (DICache.TryGetInjectConstructor(type, out var constructor))
 			{
@@ -289,23 +279,23 @@ namespace DI
 			return instance;
 		}
 		
-		public T Create<T>(params object[] parameters)
+		public T CreateWithoutFactory<T>(params object[] parameters)
 		{
 			var type = typeof(T);
-			return (T)Create(type, parameters);
+			return (T)CreateWithoutFactory(type, parameters);
 		}
 
-		public object CreateByFactory(Type type)
+		public object CreateByFactory(Type type, params object[] parameters)
 		{
 			if (_factories.TryGetValue(type, out var factory))
 			{
-				return factory.Create(type);
+				return factory.Create(type, parameters);
 			}
 
 			throw new Exception($"#DI# No factory for type {type}.");
 		}
 
-		public T CreateByFactory<T>()
+		public T CreateByFactory<T>(params object[] parameters)
 		{
 			var type = typeof(T);
 			return (T)CreateByFactory(type);
