@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace DI
 {
@@ -7,5 +8,6 @@ namespace DI
 	{
 		void Inject(object obj);
 		void Inject(GameObject obj);
+		void Inject(Scene scene);
 	}
 }

@@ -1,7 +1,7 @@
 {
   "displayName": "Dependency Injection",
   "name": "com.elmortem.dependencyinjection",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "unity": "2019.3",
   "description": "Primitive dependency injection system for Unity projects. Bind and instantiate types. Inject to constructor and method with attribut Inject. Support inject to all scene objects.",
   "keywords": [
