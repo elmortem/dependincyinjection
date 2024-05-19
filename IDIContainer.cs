@@ -3,7 +3,7 @@ using System;
 namespace DI
 {
 	// ReSharper disable once InconsistentNaming
-	public interface IDIMaker
+	public interface IDIContainer : IDIInjector, IDIResolver
 	{
 		T Create<T>(params object[] parameters);
 		object Create(Type type, params object[] parameters);
