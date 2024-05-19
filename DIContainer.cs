@@ -10,7 +10,7 @@ using Object = UnityEngine.Object;
 namespace DI
 {
 	// ReSharper disable once InconsistentNaming
-	public class DIContainer : IDIResolver, IDIMaker, IDIInjector, IDisposable
+	public class DIContainer : IDIContainer, IDisposable
 	{
 		private static DIContainer _root;
 		public static DIContainer Root
@@ -45,6 +45,7 @@ namespace DI
 			BindInstanceAsSingle<IDIResolver>(this);
 			BindInstanceAsSingle<IDIMaker>(this);
 			BindInstanceAsSingle<IDIInjector>(this);
+			BindInstanceAsSingle<IDIContainer>(this);
 		}
 		
 		public void Dispose()
@@ -250,7 +251,7 @@ namespace DI
 
 		public object Create(Type type, params object[] parameters)
 		{
-			object instance = CreateByFactory(type, parameters);
+			object instance = CreateByFactoryInternal(type, parameters);
 			if (instance == null)
 				instance = CreateWithoutFactory(type, parameters);
 			return instance;
@@ -287,12 +288,21 @@ namespace DI
 
 		public object CreateByFactory(Type type, params object[] parameters)
 		{
+			var result = CreateByFactoryInternal(type, parameters);
+			if (result != null)
+				return result;
+			
+			throw new Exception($"#DI# No factory for type {type}.");
+		}
+		
+		private object CreateByFactoryInternal(Type type, params object[] parameters)
+		{
 			if (_factories.TryGetValue(type, out var factory))
 			{
 				return factory.Create(type, parameters);
 			}
 
-			throw new Exception($"#DI# No factory for type {type}.");
+			return null;
 		}
 
 		public T CreateByFactory<T>(params object[] parameters)
