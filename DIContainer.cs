@@ -25,20 +25,21 @@ namespace DI
 			}
 		}
 		
-		private readonly DIContainer _parent;
+		private readonly IDIContainer _parent;
 		private readonly Dictionary<Type, object> _typesToInstances = new();
 		
 		private readonly Dictionary<Type, DIClassInfo> _lazyBindClassInfos = new();
 		
 		private readonly List<object> _injectedObjects = new();
 		private readonly List<IDisposable> _disposables = new();
-		private readonly Dictionary<Type, IFactory> _factories = new();
+		private readonly List<IFactory> _factories = new();
+		private readonly Dictionary<Type, IFactory> _factoriesByType = new();
 
 		private bool _completed;
 
 		#region Constructor
 
-		public DIContainer(DIContainer parent = null)
+		public DIContainer(IDIContainer parent = null)
 		{
 			_parent = parent;
 			
@@ -52,6 +53,8 @@ namespace DI
 		{
 			_typesToInstances.Clear();
 			_injectedObjects.Clear();
+			_factoriesByType.Clear();
+			_factories.Clear();
 			foreach (var disposable in _disposables)
 			{
 				disposable.Dispose();
@@ -157,6 +160,9 @@ namespace DI
 			if (_typesToInstances.ContainsKey(type))
 				throw new Exception($"Instance for type {type} already exists.");
 			
+			TryRegisterDisposable(instance);
+			TryRegisterFactory(instance);
+			
 			_typesToInstances[type] = instance;
 		}
 		
@@ -231,9 +237,6 @@ namespace DI
 				Inject(instance);
 			}
 
-			TryRegisterDisposable(instance);
-			TryRegisterFactory(instance);
-
 			BindInstanceToType(instance, classInfo.Type);
 
 			if (classInfo.InterfaceTypes != null)
@@ -297,7 +300,7 @@ namespace DI
 		
 		private object CreateByFactoryInternal(Type type, params object[] parameters)
 		{
-			if (_factories.TryGetValue(type, out var factory))
+			if (_factoriesByType.TryGetValue(type, out var factory))
 			{
 				return factory.Create(type, parameters);
 			}
@@ -314,7 +317,7 @@ namespace DI
 		public void Destroy(object instance)
 		{
 			var type = instance.GetType();
-			if (_factories.TryGetValue(type, out var factory))
+			if (_factoriesByType.TryGetValue(type, out var factory))
 			{
 				factory.Destroy(instance);
 			}
@@ -336,7 +339,7 @@ namespace DI
 
 		private void TryRegisterDisposable(object instance)
 		{
-			if (instance is IDisposable disposable)
+			if (instance != this && instance is IDisposable disposable && !_disposables.Contains(disposable))
 			{
 				_disposables.Add(disposable);
 			}
@@ -346,16 +349,20 @@ namespace DI
 		{
 			if (instance is IFactory factory)
 			{
+				if(_factories.Contains(factory))
+					return;
+				
 				var genericArguments = factory.GetType().GetGenericArguments();
 				if(genericArguments.Length > 0)
 				{
 					var baseType = genericArguments[0];
-					if (_factories.ContainsKey(baseType))
+					if (_factoriesByType.TryGetValue(baseType, out var typeFactory))
 					{
 						throw new Exception($"#DI# Type {baseType} already has factory.");
 					}
 
-					_factories[baseType] = factory;
+					_factories.Add(factory);
+					_factoriesByType[baseType] = factory;
 					
 					// Sub types
 					var subTypes = Assembly
@@ -364,7 +371,7 @@ namespace DI
 						.Where(t => t.IsSubclassOf(baseType));
 					foreach (var type in subTypes)
 					{
-						_factories[type] = factory;
+						_factoriesByType[type] = factory;
 					}
 				}
 			}
