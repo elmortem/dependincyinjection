@@ -23,7 +23,7 @@ public class LevelManager
 	private readonly AssetSystem _assetSystem;
 
 	[Inject]
-    public LevelManager(AssetSystem assetSystem)
+	public LevelManager(AssetSystem assetSystem)
 	{
 		_assetSystem = assetSystem;
 	}
@@ -35,7 +35,7 @@ public class Movement : MonoBehaviour
 	private MovementSystemConfig _movementSystemConfig;
 
 	[Inject]
-    public void Construct(MovementSystemConfig movementSystemConfig)
+	public void Construct(MovementSystemConfig movementSystemConfig)
 	{
 		_movementSystemConfig = movementSystemConfig;
 	}
@@ -60,7 +60,7 @@ public class AssetSystem
 	private readonly IDIMaker _maker;
 
 	[Inject]
-    public AssetSystem(IDIResolver resolver)
+	public AssetSystem(IDIResolver resolver)
 	{
 		_maker = maker;
 	}
