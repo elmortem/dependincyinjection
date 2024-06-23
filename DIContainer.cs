@@ -392,6 +392,9 @@ namespace DI
 				{
 					resolved = Array.Find(parameters, p =>
 					{
+						if (p == null)
+							return false;
+						
 						var pType = p.GetType();
 						if(pType == parameterInfo.ParameterType)
 							return true;
