@@ -35,8 +35,6 @@ namespace DI
 		private readonly List<IFactory> _factories = new();
 		private readonly Dictionary<Type, IFactory> _factoriesByType = new();
 
-		private bool _completed;
-
 		#region Constructor
 
 		public DIContainer(IDIContainer parent = null)
@@ -69,16 +67,20 @@ namespace DI
 		public T Resolve<T>() where T : class
 		{
 			var type = typeof(T);
-			
-			if (!_completed)
+			return (T)Resolve(type);
+		}
+		
+		public object Resolve(Type type)
+		{
+			if (_typesToInstances.TryGetValue(type, out var value))
 			{
-				_completed = true;
-				
-				var uniqueInstances = new HashSet<object>(_typesToInstances.Values);
-				foreach (var instanceToInject in uniqueInstances)
+				if (!_injectedObjects.Contains(value))
 				{
-					Inject(instanceToInject);
+					Inject(value);
+					_injectedObjects.Add(value);
 				}
+				
+				return value;
 			}
 			
 			if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
@@ -93,20 +95,15 @@ namespace DI
 					}
 				}
 
-				return (T)instance;
+				return instance;
 			}
 
-			if (!_typesToInstances.TryGetValue(type, out var value))
+			if (_parent != null)
 			{
-				if (_parent != null)
-				{
-					return _parent.Resolve<T>();
-				}
-
-				throw new Exception($"#DI# No bind type {type}.");
+				return _parent.Resolve(type);
 			}
 
-			return (T)value;
+			throw new Exception($"#DI# No bind type {type}.");
 		}
 		
 		#endregion
@@ -115,16 +112,10 @@ namespace DI
 		
 		public void Inject(object obj)
 		{
-			if (_injectedObjects.Contains(obj))
-			{
-				return;
-			}
-
 			if (DICache.TryGetInjectMethod(obj.GetType(), out var injectionMethod))
 			{
 				var paramArr = GetInjectMethodParameters(injectionMethod, null);
 				injectionMethod.Invoke(obj, paramArr);
-				_injectedObjects.Add(obj);
 			}
 		}
 
@@ -173,7 +164,18 @@ namespace DI
 		public void BindAsSingle<T>(params object[] parameters)
 			where T : class
 		{
-			LazyBind(typeof(T), null, parameters);
+			if (_lazyBindClassInfos.ContainsKey(typeof(T)))
+				return;
+			
+			if (!_typesToInstances.ContainsKey(typeof(T)))
+			{
+				LazyBind(typeof(T), null, parameters);
+			}
+			else
+			{
+				var instance = Create<T>();
+				BindInstanceToType(instance, typeof(T));
+			}
 		}
 		
 		public void BindAsSingle<TImplementation, TInterface>(params object[] parameters)
@@ -202,12 +204,6 @@ namespace DI
 
 		private void LazyBind(Type type, Type[] interfaceTypes, object[] parameters)
 		{
-			if (_completed)
-			{
-				Debug.LogError("Container is completed!");
-				return;
-			}
-			
 			var classInfo = new DIClassInfo(type, interfaceTypes, parameters);
 			if (interfaceTypes != null)
 			{
@@ -237,6 +233,8 @@ namespace DI
 				Inject(instance);
 			}
 
+			_injectedObjects.Add(instance);
+			
 			BindInstanceToType(instance, classInfo.Type);
 
 			if (classInfo.InterfaceTypes != null)
@@ -387,6 +385,21 @@ namespace DI
 				var parameterInfo = parameterInfos[i];
 
 				object resolved = null;
+				
+				/*if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
+				{
+					var instance = InstantiateLazy(lazyClassInfo);
+					_lazyBindClassInfos.Remove(type);
+					if (lazyClassInfo.InterfaceTypes != null)
+					{
+						foreach (var interfaceType in lazyClassInfo.InterfaceTypes)
+						{
+							_lazyBindClassInfos.Remove(interfaceType);
+						}
+					}
+
+					return (T)instance;
+				}*/
 
 				if (parameters != null && parameters.Length > 0)
 				{
@@ -414,6 +427,11 @@ namespace DI
 
 						return false;
 					});
+				}
+
+				if (resolved == null)
+				{
+					resolved = Resolve(parameterInfo.ParameterType);
 				}
 
 				if (resolved == null)
