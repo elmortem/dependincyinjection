@@ -1,15 +1,18 @@
 # Primitive Dependency Injection for Unity
-
 [![color:ff69b4](https://img.shields.io/badge/licence-Unlicense-blue)](https://unlicense.org)
 ![color:ff69b4](https://img.shields.io/badge/Unity-2019.3.x-red)
 
 The primitive dependency injection system for prototypes assembled on the knee.
 
 ## Installation
-
-Installation as a unity module via a git link in PackageManager or direct editing of `Packages/manifest' is supported.json:
+Installation as a unity module via a git link in PackageManager:
 ```
-"com.elmortem.dependincyinjection": "https://github.com/elmortem/dependincyinjection.git",
+https://github.com/elmortem/dependincyinjection.git?path=Packages/dependincyinjection
+```
+
+Or direct editing of `Packages/manifest` is supported.json:
+```
+"com.elmortem.dependincyinjection": "https://github.com/elmortem/dependincyinjection.git?path=Packages/dependincyinjection",
 ```
 
 ## Main types
