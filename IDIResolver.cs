@@ -8,5 +8,6 @@ namespace DI
 	public interface IDIResolver
 	{
 		T Resolve<T>() where T : class;
+		object Resolve(Type type);
 	}
 }
