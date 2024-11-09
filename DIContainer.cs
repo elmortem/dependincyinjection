@@ -110,30 +110,30 @@ namespace DI
 
 		#region Inject
 		
-		public void Inject(object obj)
+		public void Inject(object obj, params object[] parameters)
 		{
 			if (DICache.TryGetInjectMethod(obj.GetType(), out var injectionMethod))
 			{
-				var paramArr = GetInjectMethodParameters(injectionMethod, null);
+				var paramArr = GetInjectMethodParameters(injectionMethod, parameters);
 				injectionMethod.Invoke(obj, paramArr);
 			}
 		}
 
-		public void Inject(GameObject obj)
+		public void Inject(GameObject obj, params object[] parameters)
 		{
 			var components = obj.GetComponentsInChildren<Component>(includeInactive:true);
 			foreach (var component in components)
 			{
-				Inject(component);
+				Inject(component, parameters);
 			}
 		}
 
-		public void Inject(Scene scene)
+		public void Inject(Scene scene, params object[] parameters)
 		{
 			var rootGameObjects = scene.GetRootGameObjects();
 			foreach (var go in rootGameObjects)
 			{
-				Inject(go);
+				Inject(go, parameters);
 			}
 		}
 		

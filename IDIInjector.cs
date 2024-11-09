@@ -6,8 +6,8 @@ namespace DI
 	// ReSharper disable once InconsistentNaming
 	public interface IDIInjector
 	{
-		void Inject(object obj);
-		void Inject(GameObject obj);
-		void Inject(Scene scene);
+		void Inject(object obj, params object[] parameters);
+		void Inject(GameObject obj, params object[] parameters);
+		void Inject(Scene scene, params object[] parameters);
 	}
 }
