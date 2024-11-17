@@ -103,6 +103,16 @@ namespace DI
 				return _parent.Resolve(type);
 			}
 
+			var interfaces = type.GetInterfaces();
+			if (Array.Exists(interfaces, p => p == typeof(IProvider)))
+			{
+				var elementType = type.GenericTypeArguments[0];
+				Type interfaceType = typeof(IProvider<>).MakeGenericType(elementType);
+				Type providerType = typeof(Provider<>).MakeGenericType(elementType);
+				var provider = Activator.CreateInstance(providerType);
+				BindInstanceToType(provider, interfaceType);
+			}
+
 			throw new Exception($"#DI# No bind type {type}.");
 		}
 		
@@ -224,8 +234,16 @@ namespace DI
 			object instance;
 			if (DICache.TryGetInjectConstructor(classInfo.Type, out var constructor))
 			{
-				var parameters = GetInjectMethodParameters(constructor, classInfo.Parameters);
-				instance = constructor.Invoke(parameters);
+				try
+				{
+					var parameters = GetInjectMethodParameters(constructor, classInfo.Parameters);
+					instance = constructor.Invoke(parameters);
+				}
+				catch (Exception ex)
+				{
+					Debug.LogError($"[DI] Error while creating instance of type {classInfo.Type}: {ex.Message}");
+					return null;
+				}
 			}
 			else
 			{
