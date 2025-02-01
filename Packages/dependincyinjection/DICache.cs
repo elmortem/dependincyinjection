@@ -42,7 +42,11 @@ namespace DI
 			{
 				if (_resolveMethod == null)
 				{
-					_resolveMethod = typeof(DIContainer).GetMethod(_resolveMethodName);
+					_resolveMethod = typeof(DIContainer).GetMethod(_resolveMethodName,
+						BindingFlags.Public | BindingFlags.Instance,
+						null,
+						Type.EmptyTypes,
+						null);
 				}
 
 				if (_resolveMethod == null)

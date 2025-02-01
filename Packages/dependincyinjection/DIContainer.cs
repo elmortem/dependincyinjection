@@ -10,7 +10,7 @@ using Object = UnityEngine.Object;
 namespace DI
 {
 	// ReSharper disable once InconsistentNaming
-	public class DIContainer : IDIContainer, IDisposable
+	public class DIContainer : IDIContainer
 	{
 		private static DIContainer _root;
 		public static DIContainer Root
@@ -26,14 +26,13 @@ namespace DI
 		}
 		
 		private readonly IDIContainer _parent;
-		private readonly Dictionary<Type, object> _typesToInstances = new();
-		
-		private readonly Dictionary<Type, DIClassInfo> _lazyBindClassInfos = new();
-		
-		private readonly List<object> _injectedObjects = new();
-		private readonly List<IDisposable> _disposables = new();
-		private readonly List<IFactory> _factories = new();
+		private readonly HashSet<IDisposable> _disposables = new();
+		private readonly HashSet<IFactory> _factories = new();
 		private readonly Dictionary<Type, IFactory> _factoriesByType = new();
+		private readonly Dictionary<Type, DIClassInfo> _lazyBindClassInfos = new();
+		private readonly HashSet<object> _injectedObjects = new();
+		private readonly Dictionary<Type, List<object>> _typesToInstances = new();
+		private readonly HashSet<Type> _singletonTypes = new();
 
 		#region Constructor
 
@@ -41,10 +40,11 @@ namespace DI
 		{
 			_parent = parent;
 			
-			BindInstanceAsSingle<IDIResolver>(this);
-			BindInstanceAsSingle<IDIMaker>(this);
-			BindInstanceAsSingle<IDIInjector>(this);
-			BindInstanceAsSingle<IDIContainer>(this);
+			BindSingleton<IDIResolver>(this);
+			BindSingleton<IDIMaker>(this);
+			BindSingleton<IDIInjector>(this);
+			BindSingleton<IDIContainer>(this);
+			BindSingleton<IDIBinder>(this);
 		}
 		
 		public void Dispose()
@@ -58,6 +58,11 @@ namespace DI
 				disposable.Dispose();
 			}
 			_disposables.Clear();
+
+			if (this == _root)
+			{
+				_root = null;
+			}
 		}
 		
 		#endregion
@@ -66,30 +71,23 @@ namespace DI
 
 		public T Resolve<T>() where T : class
 		{
-			var type = typeof(T);
-			return (T)Resolve(type);
+			return (T)Resolve(typeof(T));
 		}
-		
+
 		public object Resolve(Type type)
 		{
-			if (_typesToInstances.TryGetValue(type, out var value))
+			if (_typesToInstances.TryGetValue(type, out var instances) && instances.Count > 0)
 			{
-				if (!_injectedObjects.Contains(value))
-				{
-					Inject(value);
-					_injectedObjects.Add(value);
-				}
-				
-				return value;
+				return instances[0];
 			}
 			
-			if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
+			if (_lazyBindClassInfos.TryGetValue(type, out var classInfo))
 			{
-				var instance = InstantiateLazy(lazyClassInfo);
+				var instance = InstantiateLazy(classInfo);
 				_lazyBindClassInfos.Remove(type);
-				if (lazyClassInfo.InterfaceTypes != null)
+				if (classInfo.InterfaceTypes != null)
 				{
-					foreach (var interfaceType in lazyClassInfo.InterfaceTypes)
+					foreach (var interfaceType in classInfo.InterfaceTypes)
 					{
 						_lazyBindClassInfos.Remove(interfaceType);
 					}
@@ -103,17 +101,71 @@ namespace DI
 				return _parent.Resolve(type);
 			}
 
-			var interfaces = type.GetInterfaces();
-			if (Array.Exists(interfaces, p => p == typeof(IProvider)))
+			throw new Exception($"#DI# No bind type {type}.");
+		}
+
+		public T[] ResolveAll<T>() where T : class
+		{
+			return ResolveAll(typeof(T)).Cast<T>().ToArray();
+		}
+
+		public object[] ResolveAll(Type type)
+		{
+			var result = new List<object>();
+			
+			// Get direct instances
+			if (_typesToInstances.TryGetValue(type, out var instances))
 			{
-				var elementType = type.GenericTypeArguments[0];
-				Type interfaceType = typeof(IProvider<>).MakeGenericType(elementType);
-				Type providerType = typeof(Provider<>).MakeGenericType(elementType);
-				var provider = Activator.CreateInstance(providerType);
-				BindInstanceToType(provider, interfaceType);
+				foreach (var instance in instances)
+				{
+					if (!_injectedObjects.Contains(instance))
+					{
+						Inject(instance);
+						_injectedObjects.Add(instance);
+					}
+				}
+				result.AddRange(instances);
+			}
+			
+			// Get instances from lazy bindings
+			if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
+			{
+				var instance = InstantiateLazy(lazyClassInfo);
+				_lazyBindClassInfos.Remove(type);
+				if (lazyClassInfo.InterfaceTypes != null)
+				{
+					foreach (var interfaceType in lazyClassInfo.InterfaceTypes)
+					{
+						_lazyBindClassInfos.Remove(interfaceType);
+					}
+				}
+				result.Add(instance);
 			}
 
-			throw new Exception($"#DI# No bind type {type}.");
+			// Get instances from parent container
+			if (_parent != null)
+			{
+				result.AddRange(_parent.ResolveAll(type));
+			}
+
+			// Get instances implementing the interface
+			foreach (var kvp in _typesToInstances)
+			{
+				if (kvp.Key != type && type.IsAssignableFrom(kvp.Key))
+				{
+					foreach (var instance in kvp.Value)
+					{
+						if (!_injectedObjects.Contains(instance))
+						{
+							Inject(instance);
+							_injectedObjects.Add(instance);
+						}
+						result.Add(instance);
+					}
+				}
+			}
+
+			return result.ToArray();
 		}
 		
 		#endregion
@@ -122,6 +174,12 @@ namespace DI
 		
 		public void Inject(object obj, params object[] parameters)
 		{
+			if (obj == null)
+			{
+				Debug.LogError("Object is null");
+				return;
+			}
+			
 			if (DICache.TryGetInjectMethod(obj.GetType(), out var injectionMethod))
 			{
 				var paramArr = GetInjectMethodParameters(injectionMethod, parameters);
@@ -151,69 +209,138 @@ namespace DI
 
 		#region Bind Instance
 
-		public void BindInstanceAsSingle<T>(T instance) where T : class
+		private void BindInstanceToType(object instance, Type type, bool isSingleton = false)
 		{
-			BindInstanceToType(instance, typeof(T));
-		}
-
-		private void BindInstanceToType(object instance, Type type)
-		{
-			if (_typesToInstances.ContainsKey(type))
-				throw new Exception($"Instance for type {type} already exists.");
+			if (isSingleton)
+			{
+				ValidateBinding(type, true);
+				_singletonTypes.Add(type);
+			}
+			else
+			{
+				ValidateBinding(type, false);
+			}
 			
-			TryRegisterDisposable(instance);
-			TryRegisterFactory(instance);
+			if (!_typesToInstances.TryGetValue(type, out var instances))
+			{
+				instances = new List<object>();
+				_typesToInstances[type] = instances;
+			}
 			
-			_typesToInstances[type] = instance;
+			if (!instances.Contains(instance))
+			{
+				TryRegisterDisposable(instance);
+				TryRegisterFactory(instance);
+				instances.Add(instance);
+			}
 		}
 		
 		#endregion // Bind Instance
 
-		#region Lazy Bind
-
-		public void BindAsSingle<T>(params object[] parameters)
-			where T : class
+		#region Singleton Binding
+		
+		public void BindSingleton<T>(T instance) where T : class
 		{
-			if (_lazyBindClassInfos.ContainsKey(typeof(T)))
+			BindInstanceToType(instance, typeof(T), true);
+		}
+
+		public void BindSingleton<T>(params object[] parameters) where T : class
+		{
+			var type = typeof(T);
+			if (_singletonTypes.Contains(type))
 				return;
 			
-			if (!_typesToInstances.ContainsKey(typeof(T)))
-			{
-				LazyBind(typeof(T), null, parameters);
-			}
-			else
-			{
-				var instance = Create<T>();
-				BindInstanceToType(instance, typeof(T));
-			}
+			LazyBind(type, null, parameters, true);
 		}
 		
-		public void BindAsSingle<TImplementation, TInterface>(params object[] parameters)
+		public void BindSingleton<TImplementation, TInterface>(TImplementation instance)
 			where TImplementation : class, TInterface
 			where TInterface : class
 		{
-			LazyBind(typeof(TImplementation), new []{typeof(TInterface)}, parameters);
+			BindInstanceToType(instance, typeof(TInterface), true);
 		}
-
-		public void BindAsSingle<TImplementation, TInterface, TInterface2>(params object[] parameters)
-			where TImplementation : class, TInterface, TInterface2
+		
+		public void BindSingleton<TImplementation, TInterface>(params object[] parameters)
+			where TImplementation : class, TInterface
 			where TInterface : class
-			where TInterface2 : class
 		{
-			LazyBind(typeof(TImplementation), new []{typeof(TInterface), typeof(TInterface2)}, parameters);
+			LazyBind(typeof(TImplementation), new[] { typeof(TInterface) }, parameters, true, true);
 		}
 
-		public void BindAsSingle<TImplementation, TInterface, TInterface2, TInterface3>(params object[] parameters)
-			where TImplementation : class, TInterface, TInterface2, TInterface3
+		#endregion
+
+		#region Implementation Binding
+
+		public void Bind<T>(T instance) where T : class
+		{
+			BindInstanceToType(instance, typeof(T), false);
+		}
+
+		public void Bind<T>(params object[] parameters) where T : class
+		{
+			var type = typeof(T);
+			LazyBind(type, null, parameters, false);
+		}
+		
+		public void Bind<TImplementation, TInterface>(TImplementation instance)
+			where TImplementation : class, TInterface
 			where TInterface : class
-			where TInterface2 : class
-			where TInterface3 : class
 		{
-			LazyBind(typeof(TImplementation), new []{typeof(TInterface), typeof(TInterface2)}, parameters);
+			BindInstanceToType(instance, typeof(TInterface), false);
+		}
+		
+		public void Bind<TImplementation, TInterface>(params object[] parameters)
+			where TImplementation : class, TInterface
+			where TInterface : class
+		{
+			LazyBind(typeof(TImplementation), new[] { typeof(TInterface) }, parameters, false, true);
 		}
 
-		private void LazyBind(Type type, Type[] interfaceTypes, object[] parameters)
+		#endregion
+
+		#region Lazy Bind
+
+		private void ValidateBinding(Type type, bool isSingleton)
 		{
+			if (isSingleton && _typesToInstances.TryGetValue(type, out var instances) && instances.Count > 0)
+			{
+				throw new Exception($"Type {type} already has instances registered");
+			}
+		}
+
+		private void LazyBind(Type type, Type[] interfaceTypes, object[] parameters, bool isSingleton = false, bool bindOnlyInterface = false)
+		{
+			if (isSingleton)
+			{
+				if (!bindOnlyInterface)
+				{
+					ValidateBinding(type, true);
+					_singletonTypes.Add(type);
+				}
+				
+				if (interfaceTypes != null)
+				{
+					foreach (var interfaceType in interfaceTypes)
+					{
+						ValidateBinding(interfaceType, true);
+						_singletonTypes.Add(interfaceType);
+					}
+				}
+			}
+			else
+			{
+				if (!bindOnlyInterface)
+					ValidateBinding(type, false);
+					
+				if (interfaceTypes != null)
+				{
+					foreach (var interfaceType in interfaceTypes)
+					{
+						ValidateBinding(interfaceType, false);
+					}
+				}
+			}
+			
 			var classInfo = new DIClassInfo(type, interfaceTypes, parameters);
 			if (interfaceTypes != null)
 			{
@@ -223,7 +350,7 @@ namespace DI
 				}
 			}
 
-			if (interfaceTypes == null || interfaceTypes.Length <= 0)
+			if (!bindOnlyInterface && (interfaceTypes == null || interfaceTypes.Length <= 0))
 			{
 				_lazyBindClassInfos[type] = classInfo;
 			}
@@ -253,13 +380,21 @@ namespace DI
 
 			_injectedObjects.Add(instance);
 			
-			BindInstanceToType(instance, classInfo.Type);
+			var isSingleton = _singletonTypes.Contains(classInfo.Type);
+			if (!isSingleton || !_typesToInstances.TryGetValue(classInfo.Type, out var instances) || instances.Count == 0)
+			{
+				BindInstanceToType(instance, classInfo.Type, isSingleton);
+			}
 
 			if (classInfo.InterfaceTypes != null)
 			{
 				foreach (var interfaceType in classInfo.InterfaceTypes)
 				{
-					BindInstanceToType(instance, interfaceType);
+					var isInterfaceSingleton = _singletonTypes.Contains(interfaceType);
+					if (!isInterfaceSingleton || !_typesToInstances.TryGetValue(interfaceType, out instances) || instances.Count == 0)
+					{
+						BindInstanceToType(instance, interfaceType, isInterfaceSingleton);
+					}
 				}
 			}
 
@@ -316,6 +451,12 @@ namespace DI
 		
 		private object CreateByFactoryInternal(Type type, params object[] parameters)
 		{
+			if (type == null)
+			{
+				Debug.LogError("Type is null!");
+				return null;
+			}
+
 			if (_factoriesByType.TryGetValue(type, out var factory))
 			{
 				return factory.Create(type, parameters);
@@ -397,49 +538,44 @@ namespace DI
 		{
 			var parameterInfos = DICache.GetMethodParameters(injectMethod);
 
+			var usedIndexes = new HashSet<int>();
 			var paramArr = new object[parameterInfos.Length];
 			for (var i = 0; i < parameterInfos.Length; i++)
 			{
 				var parameterInfo = parameterInfos[i];
 
 				object resolved = null;
-				
-				/*if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
-				{
-					var instance = InstantiateLazy(lazyClassInfo);
-					_lazyBindClassInfos.Remove(type);
-					if (lazyClassInfo.InterfaceTypes != null)
-					{
-						foreach (var interfaceType in lazyClassInfo.InterfaceTypes)
-						{
-							_lazyBindClassInfos.Remove(interfaceType);
-						}
-					}
-
-					return (T)instance;
-				}*/
 
 				if (parameters != null && parameters.Length > 0)
 				{
-					resolved = Array.Find(parameters, p =>
+					resolved = Find(parameters, (n, p) =>
 					{
-						if (p == null)
+						if (p == null || usedIndexes.Contains(n))
 							return false;
 						
 						var pType = p.GetType();
-						if(pType == parameterInfo.ParameterType)
+						if (pType == parameterInfo.ParameterType)
+						{
+							usedIndexes.Add(n);
 							return true;
-						
+						}
+
 						// down
 						if (Array.Exists(pType.GetInterfaces(), iType => iType == parameterInfo.ParameterType))
+						{
+							usedIndexes.Add(n);
 							return true;
+						}
 						
 						// up
 						var bType = pType.BaseType;
 						while (bType != null)
 						{
 							if (bType == parameterInfo.ParameterType)
+							{
+								usedIndexes.Add(n);
 								return true;
+							}
 							bType = bType.BaseType;
 						}
 
@@ -447,12 +583,19 @@ namespace DI
 					});
 				}
 
-				if (resolved == null)
+				if (resolved == null && !parameterInfo.HasDefaultValue)
 				{
-					resolved = Resolve(parameterInfo.ParameterType);
+					try
+					{
+						resolved = Resolve(parameterInfo.ParameterType);
+					}
+					catch (Exception ex)
+					{
+						Debug.LogError($"#DI# Error while resolving parameter {parameterInfo.ParameterType} at {injectMethod}: {ex.Message}");
+					}
 				}
 
-				if (resolved == null)
+				if (resolved == null && !parameterInfo.HasDefaultValue)
 				{
 					var genericResolveMethod = DICache.GetTypedResolveMethod(parameterInfo.ParameterType);
 					if (genericResolveMethod == null)
@@ -461,10 +604,26 @@ namespace DI
 					resolved = genericResolveMethod.Invoke(this, null);
 				}
 
+				if (resolved == null && parameterInfo.HasDefaultValue)
+				{
+					resolved = parameterInfo.DefaultValue;
+				}
+
 				paramArr[i] = resolved;
 			}
 
 			return paramArr;
+		}
+
+		private object Find(IList<object> list, Func<int, object, bool> predicate)
+		{
+			for (int i = 0; i < list.Count; i++)
+			{
+				if (predicate(i, list[i]))
+					return list[i];
+			}
+
+			return null;
 		}
 
 		#endregion
