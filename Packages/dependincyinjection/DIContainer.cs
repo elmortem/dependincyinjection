@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using JetBrains.Annotations;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using Object = UnityEngine.Object;
@@ -595,7 +596,7 @@ namespace DI
 					}
 				}
 
-				if (resolved == null && !parameterInfo.HasDefaultValue)
+				if (resolved == null && !parameterInfo.HasDefaultValue && parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)
 				{
 					var genericResolveMethod = DICache.GetTypedResolveMethod(parameterInfo.ParameterType);
 					if (genericResolveMethod == null)
