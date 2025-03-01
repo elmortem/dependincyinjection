@@ -70,9 +70,39 @@ namespace DI
 
 		#region Resolve
 
+		public bool TryResolve<T>(out T instance) where T : class
+		{
+			try
+			{
+				instance = (T)Resolve(typeof(T));
+				return true;
+			}
+			catch (Exception ex)
+			{
+			}
+
+			instance = null;
+			return false;
+		}
+
 		public T Resolve<T>() where T : class
 		{
 			return (T)Resolve(typeof(T));
+		}
+
+		public bool TryResolve(Type type, out object instance)
+		{
+			try
+			{
+				instance = Resolve(type);
+				return true;
+			}
+			catch (Exception ex)
+			{
+			}
+
+			instance = null;
+			return false;
 		}
 
 		public object Resolve(Type type)
@@ -584,16 +614,9 @@ namespace DI
 					});
 				}
 
-				if (resolved == null && !parameterInfo.HasDefaultValue)
+				if (resolved == null)
 				{
-					try
-					{
-						resolved = Resolve(parameterInfo.ParameterType);
-					}
-					catch (Exception ex)
-					{
-						Debug.LogError($"#DI# Error while resolving parameter {parameterInfo.ParameterType} at {injectMethod}: {ex.Message}");
-					}
+					TryResolve(parameterInfo.ParameterType, out resolved);
 				}
 
 				if (resolved == null && !parameterInfo.HasDefaultValue && parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)

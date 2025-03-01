@@ -9,6 +9,8 @@ namespace DI
 	{
 		T Resolve<T>() where T : class;
 		object Resolve(Type type);
+		bool TryResolve<T>(out T instance) where T : class;
+		bool TryResolve(Type type, out object instance);
 		T[] ResolveAll<T>() where T : class;
 		object[] ResolveAll(Type type);
 	}
