@@ -9,9 +9,15 @@ namespace DI
 	{
 		T Resolve<T>() where T : class;
 		object Resolve(Type type);
-		bool TryResolve<T>(out T instance) where T : class;
-		bool TryResolve(Type type, out object instance);
 		T[] ResolveAll<T>() where T : class;
 		object[] ResolveAll(Type type);
+		/// <summary>
+		/// Проверяет, зарегистрирован ли тип в контейнере, без создания его экземпляра
+		/// </summary>
+		bool HasType<T>() where T : class;
+		/// <summary>
+		/// Проверяет, зарегистрирован ли тип в контейнере, без создания его экземпляра
+		/// </summary>
+		bool HasType(Type type);
 	}
 }

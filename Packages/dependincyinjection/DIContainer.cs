@@ -70,39 +70,9 @@ namespace DI
 
 		#region Resolve
 
-		public bool TryResolve<T>(out T instance) where T : class
-		{
-			try
-			{
-				instance = (T)Resolve(typeof(T));
-				return true;
-			}
-			catch (Exception ex)
-			{
-			}
-
-			instance = null;
-			return false;
-		}
-
 		public T Resolve<T>() where T : class
 		{
 			return (T)Resolve(typeof(T));
-		}
-
-		public bool TryResolve(Type type, out object instance)
-		{
-			try
-			{
-				instance = Resolve(type);
-				return true;
-			}
-			catch (Exception ex)
-			{
-			}
-
-			instance = null;
-			return false;
 		}
 
 		public object Resolve(Type type)
@@ -144,7 +114,6 @@ namespace DI
 		{
 			var result = new List<object>();
 			
-			// Get direct instances
 			if (_typesToInstances.TryGetValue(type, out var instances))
 			{
 				foreach (var instance in instances)
@@ -158,7 +127,6 @@ namespace DI
 				result.AddRange(instances);
 			}
 			
-			// Get instances from lazy bindings
 			if (_lazyBindClassInfos.TryGetValue(type, out var lazyClassInfo))
 			{
 				var instance = InstantiateLazy(lazyClassInfo);
@@ -173,13 +141,11 @@ namespace DI
 				result.Add(instance);
 			}
 
-			// Get instances from parent container
 			if (_parent != null)
 			{
 				result.AddRange(_parent.ResolveAll(type));
 			}
 
-			// Get instances implementing the interface
 			foreach (var kvp in _typesToInstances)
 			{
 				if (kvp.Key != type && type.IsAssignableFrom(kvp.Key))
@@ -199,6 +165,31 @@ namespace DI
 			return result.ToArray();
 		}
 		
+		public bool HasType(Type type)
+		{
+			if (_typesToInstances.ContainsKey(type) && _typesToInstances[type].Count > 0)
+			{
+				return true;
+			}
+			
+			if (_lazyBindClassInfos.ContainsKey(type))
+			{
+				return true;
+			}
+
+			if (_parent != null)
+			{
+				return ((DIContainer)_parent).HasType(type);
+			}
+
+			return false;
+		}
+
+		public bool HasType<T>() where T : class
+		{
+			return HasType(typeof(T));
+		}
+
 		#endregion
 
 		#region Inject
@@ -298,7 +289,7 @@ namespace DI
 			LazyBind(typeof(TImplementation), new[] { typeof(TInterface) }, parameters, true, true);
 		}
 
-		#endregion
+		#endregion // Singleton Binding
 
 		#region Implementation Binding
 
@@ -327,7 +318,7 @@ namespace DI
 			LazyBind(typeof(TImplementation), new[] { typeof(TInterface) }, parameters, false, true);
 		}
 
-		#endregion
+		#endregion // Implementation Binding
 
 		#region Lazy Bind
 
@@ -616,7 +607,10 @@ namespace DI
 
 				if (resolved == null)
 				{
-					TryResolve(parameterInfo.ParameterType, out resolved);
+					if (HasType(parameterInfo.ParameterType))
+					{
+						resolved = Resolve(parameterInfo.ParameterType);
+					}
 				}
 
 				if (resolved == null && !parameterInfo.HasDefaultValue && parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)
@@ -650,6 +644,6 @@ namespace DI
 			return null;
 		}
 
-		#endregion
+		#endregion // Utility
 	}
 }
