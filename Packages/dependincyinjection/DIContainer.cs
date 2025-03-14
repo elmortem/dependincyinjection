@@ -613,7 +613,9 @@ namespace DI
 					}
 				}
 
-				if (resolved == null && !parameterInfo.HasDefaultValue && parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)
+				if (resolved == null && 
+					!parameterInfo.HasDefaultValue && 
+					parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)
 				{
 					var genericResolveMethod = DICache.GetTypedResolveMethod(parameterInfo.ParameterType);
 					if (genericResolveMethod == null)
@@ -625,6 +627,13 @@ namespace DI
 				if (resolved == null && parameterInfo.HasDefaultValue)
 				{
 					resolved = parameterInfo.DefaultValue;
+				}
+
+				if (resolved == null && 
+					!parameterInfo.HasDefaultValue &&
+					parameterInfo.GetCustomAttribute<CanBeNullAttribute>() == null)
+				{
+					throw new Exception($"#DI# Parameters {parameterInfo.ParameterType} not found.");
 				}
 
 				paramArr[i] = resolved;
