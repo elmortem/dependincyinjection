@@ -211,7 +211,7 @@ namespace DI
 
 		public void Inject(GameObject obj, params object[] parameters)
 		{
-			var components = obj.GetComponentsInChildren<Component>(includeInactive:true);
+			var components = obj.GetComponentsInChildren<MonoBehaviour>(includeInactive:true);
 			foreach (var component in components)
 			{
 				Inject(component, parameters);
