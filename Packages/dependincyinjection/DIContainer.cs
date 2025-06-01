@@ -362,8 +362,48 @@ namespace DI
 					}
 				}
 			}
+
+			DIClassInfo classInfo = null;
 			
-			var classInfo = new DIClassInfo(type, interfaceTypes, parameters);
+			if (isSingleton)
+			{
+				foreach (var kvp in _lazyBindClassInfos)
+				{
+					if (kvp.Value.Type == type)
+					{
+						classInfo = kvp.Value;
+						break;
+					}
+				}
+				
+				if (classInfo != null && interfaceTypes != null)
+				{
+					foreach (var interfaceType in interfaceTypes)
+					{
+						if (!classInfo.InterfaceTypes.Contains(interfaceType))
+						{
+							classInfo.InterfaceTypes.Add(interfaceType);
+						}
+					}
+					
+					if (parameters != null)
+					{
+						foreach (var parameter in parameters)
+						{
+							if (parameter != null && parameters.Length > 0)
+							{
+								classInfo.Parameters.Add(parameter);
+							}
+						}
+					}
+				}
+			}
+			
+			if (classInfo == null)
+			{
+				classInfo = new DIClassInfo(type, interfaceTypes, parameters);
+			}
+			
 			if (interfaceTypes != null)
 			{
 				foreach (var typeAlias in interfaceTypes)
@@ -556,7 +596,7 @@ namespace DI
 			}
 		}
 		
-		private object[] GetInjectMethodParameters(MethodBase injectMethod, object[] parameters)
+		private object[] GetInjectMethodParameters(MethodBase injectMethod, IReadOnlyList<object> parameters)
 		{
 			var parameterInfos = DICache.GetMethodParameters(injectMethod);
 
@@ -568,7 +608,7 @@ namespace DI
 
 				object resolved = null;
 
-				if (parameters != null && parameters.Length > 0)
+				if (parameters != null && parameters.Count > 0)
 				{
 					resolved = Find(parameters, (n, p) =>
 					{
@@ -642,7 +682,7 @@ namespace DI
 			return paramArr;
 		}
 
-		private object Find(IList<object> list, Func<int, object, bool> predicate)
+		private object Find(IReadOnlyList<object> list, Func<int, object, bool> predicate)
 		{
 			for (int i = 0; i < list.Count; i++)
 			{
